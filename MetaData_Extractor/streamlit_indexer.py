@@ -14,6 +14,43 @@ GLOBAL_STATS_PATH = "global_stats.json"
 
 # --- Helper Functions ---
 
+def clean_json_text(text):
+    """
+    Cleans the API response text to extract valid JSON.
+    """
+    text = text.replace("```json", "").replace("```", "").strip()
+    # Find the start and end of the JSON object
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    
+    if start_idx != -1 and end_idx != -1:
+        text = text[start_idx:end_idx+1]
+    return text
+
+def repair_json(json_str):
+    """
+    Attempts to repair common JSON errors from LLMs.
+    """
+    # 1. Replace newlines inside strings (simple heuristic)
+    # This is risky but often necessary for multi-line content from LLMs that didn't escape newlines
+    # logic: if we are inside quotes, replace \n with \\n. 
+    # Hard to do perfectly with regex. 
+    # Instead, we will try to rely on more specific fixes for the Reported Error: "Expecting ',' delimiter"
+    
+    # Fix: Unescaped double quotes inside strings. 
+    # A crude but often effective way is tricky without a parser.
+    
+    # Fix: Missing commas between array items or object properties
+    # pattern: " (end of logical value) followed by " (start of next key) without comma
+    # This regex looks for: "value" "key":
+    json_str = re.sub(r'"\s+"\w+":', lambda m: m.group(0).replace(' "', '", "'), json_str)
+
+    # Fix: Trailing commas
+    # pattern: , } or , ]
+    json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
+    
+    return json_str
+
 def get_book_id(filename):
     """
     Derives BOOK_ID from filename.
@@ -158,6 +195,12 @@ def get_structured_index(pdf_base64, api_key):
     5. Maintain separate entries for every distinct story/article.
 
     Output: Return a strictly formatted JSON object.
+    
+    CRITICAL FORMATTING RULES:
+    1. Output MUST be valid JSON.
+    2. Escape ALL double quotes within strings (e.g., "She said \"Hello\"").
+    3. Ensure no trailing commas.
+    4. Do not include any text outside the JSON block.
     """
 
     prompt = """
@@ -261,8 +304,9 @@ def render_single_mode():
                     try:
                         # Extract JSON from the response
                         content_text = api_response['candidates'][0]['content']['parts'][0]['text']
-                        # Clean up markdown code blocks if present
-                        content_text = content_text.replace("```json", "").replace("```", "").strip()
+                        
+                        # Clean up text
+                        content_text = clean_json_text(content_text)
                         
                         data = json.loads(content_text)
                         
@@ -278,8 +322,28 @@ def render_single_mode():
                         st.session_state['indexed_data'] = data
                         st.success("Analysis Complete!")
                     except (KeyError, json.JSONDecodeError) as e:
-                        st.error(f"Failed to parse API response: {e}")
-                        st.text(api_response)
+                        # Attempt Repair
+                        try:
+                            repaired_text = repair_json(content_text)
+                            data = json.loads(repaired_text)
+                            
+                            # Enforce book_id
+                            data['book_id'] = book_id
+                            # Calculate Statistics
+                            data = calculate_statistics(data)
+                            # Update Global Stats
+                            update_global_stats(data)
+                            st.session_state['indexed_data'] = data
+                            st.success("Analysis Complete (Repaired JSON)!")
+                            
+                        except Exception as e2:
+                            st.error(f"Failed to parse API response even after repair: {e}")
+                            st.error(f"Repair Error: {e2}")
+                            with st.expander("View Raw API Response"):
+                                st.code(content_text if 'content_text' in locals() else api_response)
+                            
+                            # Suggest Retry
+                            st.warning("The model produced invalid JSON. This often happens with very long stories. Please try clicking 'Analyze PDF' again.")
 
         # Step 2: Verify
         if st.session_state.get('indexed_data'):
@@ -396,8 +460,15 @@ def render_bulk_mode():
                     
                     if api_response:
                         content_text = api_response['candidates'][0]['content']['parts'][0]['text']
-                        content_text = content_text.replace("```json", "").replace("```", "").strip()
-                        data = json.loads(content_text)
+                        content_text = clean_json_text(content_text)
+                        
+                        try:
+                            data = json.loads(content_text)
+                        except json.JSONDecodeError:
+                            # Fallback repair in bulk mode too
+                            content_text = repair_json(content_text)
+                            data = json.loads(content_text)
+                            
                         data['book_id'] = book_id
                         
                         # Calculate Statistics
