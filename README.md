@@ -59,8 +59,8 @@ Use this for processing entire years/months of magazines.
 
 ### Global Statistics
 - The app maintains a `global_stats.json` file to track total counts.
-- **Parallel Processing**: If you are running multiple instances of the app (e.g., on different terminals), `global_stats.json` might get out of sync. This is fine!
-- **Fixing Stats**: You can safely ignore `global_stats.json` while working. We can rebuild it later by merging all the generated JSON files.
+- **Multi-Terminal Support**: The app now uses **File Locking** to safely handle global stats even when running multiple instances (e.g., 2 terminals).
+- You can run `streamlit run ...` on different ports (e.g., 8501, 8502) and process different folders simultaneously without worry.
 
 ### Common Errors
 - **"API Response format invalid"**:

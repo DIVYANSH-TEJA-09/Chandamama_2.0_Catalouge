@@ -6,12 +6,14 @@ import time
 import os
 import re
 from json_repair import repair_json
+from filelock import FileLock
 
 # --- Configuration ---
 API_KEY = ""  # To be filled by user or environment
 MODEL_NAME = "gemini-2.5-flash-preview-09-2025"
 API_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
 GLOBAL_STATS_PATH = "global_stats.json"
+GLOBAL_STATS_LOCK = "global_stats.json.lock"
 
 # --- Helper Functions ---
 
@@ -144,28 +146,31 @@ def save_global_stats(stats):
 
 def update_global_stats(new_data):
     """Updates global statistics with data from a newly processed file."""
-    stats = load_global_stats()
+    lock = FileLock(GLOBAL_STATS_LOCK)
     
-    stories = new_data.get('stories', [])
-    stats['total_stories'] = stats.get('total_stories', 0) + len(stories)
-    
-    # Initialize dictionaries if missing
-    if 'authors' not in stats: stats['authors'] = {}
-    if 'genres' not in stats: stats['genres'] = {}
+    with lock:
+        stats = load_global_stats()
+        
+        stories = new_data.get('stories', [])
+        stats['total_stories'] = stats.get('total_stories', 0) + len(stories)
+        
+        # Initialize dictionaries if missing
+        if 'authors' not in stats: stats['authors'] = {}
+        if 'genres' not in stats: stats['genres'] = {}
 
-    for story in stories:
-        # Update Authors
-        author = story.get('author', 'చందమామ బృందం').strip()
-        if author:
-            stats['authors'][author] = stats['authors'].get(author, 0) + 1
-            
-        # Update Genres
-        genre = story.get('genre', 'Unknown').strip()
-        if genre and genre.lower() != 'unknown':
-            stats['genres'][genre] = stats['genres'].get(genre, 0) + 1
-            
-    save_global_stats(stats)
-    return stats
+        for story in stories:
+            # Update Authors
+            author = story.get('author', 'చందమామ బృందం').strip()
+            if author:
+                stats['authors'][author] = stats['authors'].get(author, 0) + 1
+                
+            # Update Genres
+            genre = story.get('genre', 'Unknown').strip()
+            if genre and genre.lower() != 'unknown':
+                stats['genres'][genre] = stats['genres'].get(genre, 0) + 1
+                
+        save_global_stats(stats)
+        return stats
 
 def encode_pdf(file):
     """Encodes the uploaded PDF file to Base64."""
