@@ -31,21 +31,18 @@ def repair_json(json_str):
     """
     Attempts to repair common JSON errors from LLMs.
     """
-    # 1. Replace newlines inside strings (simple heuristic)
-    # This is risky but often necessary for multi-line content from LLMs that didn't escape newlines
-    # logic: if we are inside quotes, replace \n with \\n. 
-    # Hard to do perfectly with regex. 
-    # Instead, we will try to rely on more specific fixes for the Reported Error: "Expecting ',' delimiter"
-    
-    # Fix: Unescaped double quotes inside strings. 
-    # A crude but often effective way is tricky without a parser.
-    
-    # Fix: Missing commas between array items or object properties
-    # pattern: " (end of logical value) followed by " (start of next key) without comma
-    # This regex looks for: "value" "key":
-    json_str = re.sub(r'"\s+"\w+":', lambda m: m.group(0).replace(' "', '", "'), json_str)
+    # 1. Fix missing commas between objects in a list: } { or } \n { -> }, {
+    json_str = re.sub(r'}\s*{', '}, {', json_str)
 
-    # Fix: Trailing commas
+    # 2. Fix missing commas between list items ending with " and starting with " (e.g., ["a" "b"])
+    # Not common in this schema but good practice.
+    # json_str = re.sub(r'"\s+"', '", "', json_str) # Too risky if inside a string
+
+    # 3. Fix missing commas between key-value pairs: "value" "key": -> "value", "key":
+    # Look for: " (end of val) whitespace " (start of key) word characters ":
+    json_str = re.sub(r'"\s+"(?=\w+":)', '", "', json_str)
+
+    # 4. Fix: Trailing commas
     # pattern: , } or , ]
     json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
     
@@ -452,6 +449,32 @@ def render_bulk_mode():
                 file_path = os.path.join(input_dir, filename)
                 book_id = get_book_id(filename)
                 
+                # Check if JSON already exists in output_dir
+                json_filename = f"{book_id}.json" # Default naming convention
+                existing_json_path = os.path.join(output_dir, json_filename)
+                
+                # Also check for Year/Month folder structure attempts if default not found (optional, but good for robustness if user organized them)
+                # But for now, let's stick to the flattening or the likely user workflow.
+                # Actually, the tool saves as `book_id.json` in the export step (line 578), so that's what we look for.
+                
+                if os.path.exists(existing_json_path):
+                    try:
+                        with open(existing_json_path, 'r', encoding='utf-8') as f:
+                            existing_data = json.load(f)
+                        
+                        st.session_state['bulk_data'][filename] = {
+                            'status': 'processed',
+                            'data': existing_data,
+                            'verified': True # Assume existing means verified/done
+                        }
+                        status_text.text(f"Skipping {filename} (JSON already exists)...")
+                        progress_bar.progress((i + 1) / len(pdf_files))
+                        time.sleep(0.1) # Brief pause for UI update
+                        continue
+                    except Exception as e:
+                        st.warning(f"Found existing JSON for {filename} but failed to load it: {e}. Reprocessing...")
+
+                content_text_debug = None
                 try:
                     with open(file_path, "rb") as f:
                         pdf_base64 = base64.b64encode(f.read()).decode('utf-8')
@@ -459,31 +482,35 @@ def render_bulk_mode():
                     api_response = get_structured_index(pdf_base64, api_key_input)
                     
                     if api_response:
-                        content_text = api_response['candidates'][0]['content']['parts'][0]['text']
-                        content_text = clean_json_text(content_text)
-                        
                         try:
-                            data = json.loads(content_text)
-                        except json.JSONDecodeError:
-                            # Fallback repair in bulk mode too
-                            content_text = repair_json(content_text)
-                            data = json.loads(content_text)
+                            content_text = api_response['candidates'][0]['content']['parts'][0]['text']
+                            content_text_debug = content_text # Save for debug if needed
+                            content_text = clean_json_text(content_text)
                             
-                        data['book_id'] = book_id
-                        
-                        # Calculate Statistics
-                        data = calculate_statistics(data)
+                            try:
+                                data = json.loads(content_text)
+                            except json.JSONDecodeError:
+                                # Fallback repair in bulk mode too
+                                content_text = repair_json(content_text)
+                                data = json.loads(content_text)
+                                
+                            data['book_id'] = book_id
+                            
+                            # Calculate Statistics
+                            data = calculate_statistics(data)
 
-                        st.session_state['bulk_data'][filename] = {
-                            'status': 'processed',
-                            'data': data,
-                            'verified': False
-                        }
+                            st.session_state['bulk_data'][filename] = {
+                                'status': 'processed',
+                                'data': data,
+                                'verified': False
+                            }
+                        except (KeyError, IndexError) as ignored:
+                             st.session_state['bulk_data'][filename] = {'status': 'error', 'msg': 'API Response format invalid', 'debug': str(api_response)}
                     else:
-                        st.session_state['bulk_data'][filename] = {'status': 'error', 'msg': 'API Error'}
+                        st.session_state['bulk_data'][filename] = {'status': 'error', 'msg': 'API Error (No Response)'}
                         
                 except Exception as e:
-                    st.session_state['bulk_data'][filename] = {'status': 'error', 'msg': str(e)}
+                    st.session_state['bulk_data'][filename] = {'status': 'error', 'msg': str(e), 'debug': content_text_debug}
                 
                 # Auto-save backup after every file
                 try:
@@ -555,6 +582,9 @@ def render_bulk_mode():
                             
                     elif file_info.get('status') == 'error':
                         st.error(f"Error processing file: {file_info.get('msg')}")
+                        if file_info.get('debug'):
+                            with st.expander("View Raw Debug Content"):
+                                st.code(file_info['debug'])
                     else:
                         st.info("File not processed yet.")
 
