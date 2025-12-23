@@ -5,6 +5,7 @@ import json
 import time
 import os
 import re
+from json_repair import repair_json
 
 # --- Configuration ---
 API_KEY = ""  # To be filled by user or environment
@@ -27,30 +28,8 @@ def clean_json_text(text):
         text = text[start_idx:end_idx+1]
     return text
 
-def repair_json(json_str):
-    """
-    Attempts to repair common JSON errors from LLMs.
-    """
-    # 1. Fix missing commas between objects in a list: } { or } \n { -> }, {
-    json_str = re.sub(r'}\s*{', '}, {', json_str)
+# Removed custom repair_json function in favor of json_repair library
 
-    # 2. Fix missing commas between list items ending with " and starting with " (e.g., ["a" "b"])
-    # Not common in this schema but good practice.
-    # json_str = re.sub(r'"\s+"', '", "', json_str) # Too risky if inside a string
-
-    # 3. Fix missing commas between key-value pairs: "value" "key": -> "value", "key":
-    # Look for: " (end of val) whitespace " (start of key) word characters ":
-    json_str = re.sub(r'"\s+"(?=\w+":)', '", "', json_str)
-
-    # 4. Fix missing commas after numbers/booleans/null
-    # Pattern: digit or true/false/null whitespace "key":
-    json_str = re.sub(r'(\d+|true|false|null)\s+"(?=\w+":)', r'\1, "', json_str)
-
-    # 5. Fix: Trailing commas
-    # pattern: , } or , ]
-    json_str = re.sub(r',\s*([}\]])', r'\1', json_str)
-    
-    return json_str
 
 def get_book_id(filename):
     """
@@ -352,6 +331,7 @@ def render_single_mode():
                     except (KeyError, json.JSONDecodeError) as e:
                         # Attempt Repair
                         try:
+                            # Use json_repair to fix and parse
                             repaired_text = repair_json(content_text)
                             data = json.loads(repaired_text)
                             
@@ -521,7 +501,7 @@ def render_bulk_mode():
                             try:
                                 data = json.loads(content_text)
                             except json.JSONDecodeError:
-                                # Fallback repair in bulk mode too
+                                # Fallback repair using json_repair
                                 content_text = repair_json(content_text)
                                 data = json.loads(content_text)
                                 
