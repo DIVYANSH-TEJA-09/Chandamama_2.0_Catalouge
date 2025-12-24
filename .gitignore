@@ -40,7 +40,7 @@ wheels/
 .streamlit/
 
 # Project Specific
-MetaData_Extractor/global_stats.json
+
 MetaData_Extractor/_bulk_progress_backup.json
 *_progress_backup.json
 *.log

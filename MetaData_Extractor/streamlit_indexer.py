@@ -78,6 +78,7 @@ def calculate_statistics(data):
     stories = data.get('stories', [])
     author_counts = {}
     genre_counts = {}
+    keyword_counts = {}
 
     for i, story in enumerate(stories):
         # --- Robust Page Calculation ---
@@ -118,11 +119,19 @@ def calculate_statistics(data):
         if genre and genre.lower() != 'unknown':
             genre_counts[genre] = genre_counts.get(genre, 0) + 1
             
+        # Count Keywords
+        keywords = story.get('keywords', [])
+        if isinstance(keywords, list):
+            for kw in keywords:
+                if kw and isinstance(kw, str):
+                    keyword_counts[kw.strip()] = keyword_counts.get(kw.strip(), 0) + 1
+            
     # Add statistics block to the top level
     data['statistics'] = {
         'total_stories': len(stories),
         'author_counts': author_counts,
-        'genre_counts': genre_counts
+        'genre_counts': genre_counts,
+        'keyword_counts': keyword_counts
     }
     return data
 
@@ -133,8 +142,8 @@ def load_global_stats():
             with open(GLOBAL_STATS_PATH, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception:
-            return {"total_stories": 0, "authors": {}, "genres": {}}
-    return {"total_stories": 0, "authors": {}, "genres": {}}
+            return {"total_stories": 0, "authors": {}, "genres": {}, "keywords": {}}
+    return {"total_stories": 0, "authors": {}, "genres": {}, "keywords": {}}
 
 def save_global_stats(stats):
     """Saves global statistics to the JSON file."""
@@ -157,6 +166,7 @@ def update_global_stats(new_data):
         # Initialize dictionaries if missing
         if 'authors' not in stats: stats['authors'] = {}
         if 'genres' not in stats: stats['genres'] = {}
+        if 'keywords' not in stats: stats['keywords'] = {}
 
         for story in stories:
             # Update Authors
@@ -168,6 +178,14 @@ def update_global_stats(new_data):
             genre = story.get('genre', 'Unknown').strip()
             if genre and genre.lower() != 'unknown':
                 stats['genres'][genre] = stats['genres'].get(genre, 0) + 1
+            
+            # Update Keywords
+            keywords = story.get('keywords', [])
+            if isinstance(keywords, list):
+                for kw in keywords:
+                    if kw and isinstance(kw, str):
+                        k = kw.strip()
+                        stats['keywords'][k] = stats['keywords'].get(k, 0) + 1
                 
         save_global_stats(stats)
         return stats
