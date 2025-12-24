@@ -75,6 +75,12 @@ def regenerate_global_stats(root_dir, output_path):
         print(f"Unique Authors: {len(author_counts)}")
         print(f"Unique Genres: {len(genre_counts)}")
         print(f"Unique Keywords: {len(keyword_counts)}")
+        
+        print("\n--- INSIGHTS ---")
+        print("Top 5 Authors:", author_counts.most_common(5))
+        print("Top 5 Genres:", genre_counts.most_common(5))
+        print("Top 5 Keywords:", keyword_counts.most_common(5))
+        print("----------------")
     except Exception as e:
         print(f"Failed to write output file: {e}")
 
