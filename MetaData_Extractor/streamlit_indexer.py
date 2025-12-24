@@ -210,7 +210,7 @@ def get_structured_index(pdf_base64, api_key):
     
     CRITICAL FORMATTING RULES:
     1. Output MUST be valid JSON.
-    2. Escape ALL double quotes within strings (e.g., "She said \"Hello\"").
+    2. Escape ALL double quotes within strings (e.g., "She said \\"Hello\\"").
     3. Ensure no trailing commas.
     4. Do not include any text outside the JSON block.
     """

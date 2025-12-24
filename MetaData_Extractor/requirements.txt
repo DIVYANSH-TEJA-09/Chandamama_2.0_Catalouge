@@ -2,3 +2,4 @@ streamlit
 requests
 json_repair
 filelock
+google-generativeai
